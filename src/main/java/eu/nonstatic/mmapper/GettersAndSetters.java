@@ -113,7 +113,7 @@ class GettersAndSetters {
     private static String isSetter(Class<?> clazz, Method method, boolean usingSetPrefix) {
         String name = method.getName();
         if(!usingSetPrefix) {
-            if(clazz.equals(method.getReturnType())) { // is it really a builder method ?
+            if(method.getReturnType().isAssignableFrom(clazz)) { // is it really a builder method? Still, taking Lombok's @SuperBuilder into account
                 return formatProp(name);
             }
         } else if(name.startsWith(PREFIX_SET) && method.getParameterTypes().length == 1) {

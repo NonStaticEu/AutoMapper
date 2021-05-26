@@ -61,7 +61,7 @@ public class MMapper {
 
 
     private GettersAndSetters toGettersAndSettersSafe(Class<?> clazz, boolean getters, boolean setters, boolean usingSetters) {
-        if(isMappable(clazz)) {
+        if(usingSetters ? isBuildable(clazz) : isMappable(clazz)) {
             return new GettersAndSetters(clazz, getters, setters, usingSetters);
         } else {
             throw new IllegalArgumentException("Won't be able to map type " + clazz.getName());
@@ -69,49 +69,54 @@ public class MMapper {
     }
 
 
-    public <F, T> T map(F from, T to) {
-        return map(from, to, (String[])null);
+    public <F, T> T map(F fromInstance, T toInstance) {
+        return map(fromInstance, toInstance, (String[])null);
     }
 
 
-    public <F, T> T map(F from, T to, String... excludedProps) {
-        return mapInternal(from, to, true, excludedProps);
+    public <F, T> T map(F fromInstance, T toInstance, String... excludedProps) {
+        return mapInternal(fromInstance, toInstance, true, excludedProps);
     }
 
 
-    public <F, T> T mapToInstance(F from, Class<T> to) {
-        return mapToInstance(from, to, (String[])null);
+    public <F, T> T mapToInstance(F fromInstance, Class<T> toClass) {
+        return mapToInstance(fromInstance, toClass, (String[])null);
     }
 
 
-    public <F, T> T mapToInstance(F from, Class<T> to, String... excludedProps) {
+    public <F, T> T mapToInstance(F fromInstance, Class<T> toClass, String... excludedProps) {
         try {
-            return map(from, to.newInstance(), excludedProps);
+            return map(fromInstance, toClass.newInstance(), excludedProps);
         } catch (InstantiationException | IllegalAccessException e) { // are you POJO enough?
             throw new RuntimeException(e);
         }
     }
 
 
-    public <F, T, B> B mapToBuilder(F from, Class<T> to) {
-        return mapToBuilder(from, to, (String[])null);
+    public <F, T, B> B mapToBuilder(F fromInstance, Class<T> toClass) {
+        return mapToBuilder(fromInstance, toClass, (String[])null);
     }
 
 
     @SuppressWarnings("unchecked")
-    public <F, T, B> B mapToBuilder(F from, Class<T> to, String... excludedProps) {
+    public <F, T, B> B mapToBuilder(F fromInstance, Class<T> to, String... excludedProps) {
         try {
+            Object toInstance;
+
             GettersAndSetters gsTo = register(to); // No matter how autoRegister is set
             GettersAndSetters.BuilderContext builderContext = gsTo.builderContext;
             if(builderContext == null) {
                 Method builderMethod = findBuilderMethod(to);
-                Class<?> builderClass = builderMethod.getReturnType();
+                toInstance = builderMethod.invoke(null);// NOT builderMethod.getReturnType(), its result may be abstract whereas calling will give a concrete instance, which is what we're actually mapping to.
                 boolean usingSetters = isBuilderUsingSetters(to);
 
-                register(builderClass, usingSetters); // No matter how autoRegister is set
+                register(toInstance.getClass(), usingSetters); // No matter how autoRegister is set
                 gsTo.builder(builderContext = new GettersAndSetters.BuilderContext(builderMethod, usingSetters));
+            } else {
+                toInstance = builderContext.method.invoke(null);
             }
-            return (B) mapInternal(from, builderContext.method.invoke(from), builderContext.usingSetters, excludedProps); // unsafe!
+
+            return (B) mapInternal(fromInstance, toInstance, builderContext.usingSetters, excludedProps); // unsafe!
         }
         catch(NoSuchMethodException e) {
             throw new IllegalArgumentException(e);
@@ -122,8 +127,16 @@ public class MMapper {
 
 
     public static boolean isMappable(Class<?> clazz) {
+        return !isAbstract(clazz.getModifiers()) && isBuildable(clazz) ;
+    }
+
+    /**
+     * May be abstract. eg: lombok's @SuperBuilder would return an abstract type
+     * @param clazz
+     * @return
+     */
+    public static boolean isBuildable(Class<?> clazz) {
         return ! ( clazz.isInterface()
-                || isAbstract(clazz.getModifiers())
                 || clazz.isAnnotation()
                 || clazz.isEnum()
                 || clazz.isPrimitive()
@@ -179,7 +192,7 @@ public class MMapper {
 
     private static boolean isBuilderLikeMethod(Method method) {
         return isStatic(method.getModifiers()) && method.getParameterTypes().length == 0
-                && isMappable(method.getReturnType());
+                && isBuildable(method.getReturnType());
     }
 
     private static boolean isBuildLikeMethod(Method method, Class<?> expectedBuiltType) {
@@ -212,7 +225,7 @@ public class MMapper {
                     Method setter = gsTo.setters.get(propertyName);
                     String fromName = fromClass.getSimpleName(), toName = toClass.getSimpleName();
                     if (setter != null) {
-                        mapProperty(propertyName, from, fromName, gEntry.getValue(), to, toName, setter, !usingSetters);
+                        mapProperty(propertyName, from, fromName, gEntry.getValue(), to, toName, setter, usingSetters);
                     } else {
                         log.info("No match for getter {}.{} into {}", fromName, propertyName, toName);
                     }
@@ -248,10 +261,10 @@ public class MMapper {
     }
 
 
-    private static <F, T> void mapProperty(String propertyName, F from, String fromName, Method getter, T to, String toName, Method setter, boolean builder) {
+    private static <F, T> void mapProperty(String propertyName, F from, String fromName, Method getter, T to, String toName, Method setter, boolean usingSetters) {
         try {
             Class<?> getterReturn = getter.getReturnType(), setterParamType = setter.getParameterTypes()[0];
-            if (builder || setterParamType.isAssignableFrom(getterReturn)) {
+            if (!usingSetters || setterParamType.isAssignableFrom(getterReturn)) {
                 Object value = getter.invoke(from);
                 log.info("Mapping from {}.{} to {}.{} with {}", fromName, propertyName, toName, propertyName, value);
                 setter.invoke(to, value);
