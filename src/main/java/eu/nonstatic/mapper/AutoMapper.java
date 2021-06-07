@@ -1,4 +1,4 @@
-package eu.nonstatic.mmapper;
+package eu.nonstatic.mapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -6,30 +6,24 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
-import static java.lang.reflect.Modifier.isAbstract;
-import static java.lang.reflect.Modifier.isStatic;
+import static eu.nonstatic.mapper.AssignableHelper.isAssignable;
+import static eu.nonstatic.mapper.ReflectionUtils.*;
 
-public class MMapper {
+public class AutoMapper {
 
     private static final Logger log = LoggerFactory.getLogger(GettersAndSetters.class);
-
-    private static final String DEFAULT_BUILDER_METHOD_NAME = "builder";
-    private static final String DEFAULT_BUILDER_S_BUILD_METHOD_NAME = "build";
-    public static final String AVRO_SPECIFIC_RECORD_BASE_FQCN = "org.apache.avro.specific.SpecificRecordBase"; // to avoid dependency
-
 
     private final HashMap<Class<?>, GettersAndSetters> registry = new HashMap<>();
     private boolean autoRegister;
 
 
-    public MMapper() {
+    public AutoMapper() {
         setAutoRegister(true);
     }
 
-    public MMapper(Class<?>... clazzz) {
+    public AutoMapper(Class<?>... clazzz) {
         for (Class<?> clazz : clazzz) {
             register(clazz, true);
         }
@@ -49,7 +43,7 @@ public class MMapper {
         return autoRegister;
     }
 
-    public MMapper setAutoRegister(boolean autoRegister) {
+    public AutoMapper setAutoRegister(boolean autoRegister) {
         this.autoRegister = autoRegister;
         return this;
     }
@@ -93,13 +87,13 @@ public class MMapper {
     }
 
 
-    public <F, T, B> B mapToBuilder(F fromInstance, Class<T> toClass) {
+    public <B> B mapToBuilder(Object fromInstance, Class<?> toClass) {
         return mapToBuilder(fromInstance, toClass, (String[])null);
     }
 
 
     @SuppressWarnings("unchecked")
-    public <F, T, B> B mapToBuilder(F fromInstance, Class<T> to, String... excludedProps) {
+    public <B> B mapToBuilder(Object fromInstance, Class<?> to, String... excludedProps) {
         try {
             Object toInstance;
 
@@ -126,96 +120,14 @@ public class MMapper {
     }
 
 
-    public static boolean isMappable(Class<?> clazz) {
-        return !isAbstract(clazz.getModifiers()) && isBuildable(clazz) ;
-    }
-
-    /**
-     * May be abstract. eg: lombok's @SuperBuilder would return an abstract type
-     * @param clazz
-     * @return
-     */
-    public static boolean isBuildable(Class<?> clazz) {
-        return ! ( clazz.isInterface()
-                || clazz.isAnnotation()
-                || clazz.isEnum()
-                || clazz.isPrimitive()
-                || clazz.isArray());
-    }
-
-
-
-    public static Method findBuilderMethod(Class<?> clazz) throws NoSuchMethodException {
-        try {
-            Method builderMethod = clazz.getMethod(DEFAULT_BUILDER_METHOD_NAME);
-            if(isBuilderLikeMethod(builderMethod)) {
-                return builderMethod;
-            } else {
-                log.debug("{}.{} method doesn't look like a builder", clazz.getSimpleName(), DEFAULT_BUILDER_METHOD_NAME);
-            }
-        } catch (NoSuchMethodException e) {
-            // nothing for now, we have a second chance
-        }
-
-        // need to search better
-        for (Method method : clazz.getMethods()) {
-            Class<?> returnType = method.getReturnType(); // builder's type ?
-            if (isBuilderLikeMethod(method) && hasBuildLikeMethod(returnType, clazz)) {
-                return method;
-            }
-        }
-
-        throw new NoSuchMethodException("Can't find any obvious builder method");
-    }
-
-
-    private static boolean hasBuildLikeMethod(Class<?> builderClazz, Class<?> expectedBuiltType) {
-        try {
-            Method buildMethod = builderClazz.getMethod(DEFAULT_BUILDER_S_BUILD_METHOD_NAME);
-            if(isBuildLikeMethod(buildMethod, expectedBuiltType)) {
-                return true;
-            } else {
-                log.debug("{}.{}} method doesn't look like a build method", builderClazz.getSimpleName(), DEFAULT_BUILDER_S_BUILD_METHOD_NAME);
-            }
-        } catch (NoSuchMethodException e) {
-            // nothing for now, we have a second chance
-        }
-
-        // need to search better
-        for (Method method : builderClazz.getMethods()) {
-            if (isBuildLikeMethod(method, expectedBuiltType)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isBuilderLikeMethod(Method method) {
-        return isStatic(method.getModifiers()) && method.getParameterTypes().length == 0
-                && isBuildable(method.getReturnType());
-    }
-
-    private static boolean isBuildLikeMethod(Method method, Class<?> expectedBuiltType) {
-        return !isStatic(method.getModifiers()) && method.getParameterTypes().length == 0
-                && method.getReturnType().equals(expectedBuiltType);
-    }
-
-    /**
-     * Add more tests if needed
-     * @param clazz
-     * @return
-     */
-    private static boolean isBuilderUsingSetters(Class<?> clazz) {
-        return AVRO_SPECIFIC_RECORD_BASE_FQCN.equals(clazz.getSuperclass().getName());
-    }
-
-
     private <F, T> T mapInternal(F from, T to, boolean usingSetters, String[] excludedProps) {
         if(from != null && to != null) {
 
             Class<?> fromClass = from.getClass(), toClass = to.getClass();
             GettersAndSetters gsFrom = checkRegistered(fromClass, true, "from"),
                                 gsTo = checkRegistered(toClass, usingSetters, "to");
+
+            gsFrom.checkGettersContain(excludedProps);
 
             for (Map.Entry<String, Method> gEntry : gsFrom.getters.entrySet()) {
                 String propertyName = gEntry.getKey();
@@ -263,28 +175,33 @@ public class MMapper {
 
     private static <F, T> void mapProperty(String propertyName, F from, String fromName, Method getter, T to, String toName, Method setter, boolean usingSetters) {
         try {
-            Class<?> getterReturn = getter.getReturnType(), setterParamType = setter.getParameterTypes()[0];
-            if (!usingSetters || setterParamType.isAssignableFrom(getterReturn)) {
-                Object value = getter.invoke(from);
+            Object value = getter.invoke(from);
+            // taking the most specialized; eg: Number getProp() where prop's value is an actual Integer.
+            Class<?> getterReturn = value != null ? value.getClass() : getter.getReturnType();
+            Class<?> setterParamType = setter.getParameterTypes()[0];
+            if (/* TODO useless? !usingSetters || */ isAssignable(getterReturn, setterParamType)) {
+                 // happy that primitives do auto boxing
                 log.info("Mapping from {}.{} to {}.{} with {}", fromName, propertyName, toName, propertyName, value);
-                setter.invoke(to, value);
+                try {
+                    //TODO coertion
+                    setter.invoke(to, value); // also happy auto unboxing takes place when needed
+                } catch (IllegalArgumentException e) { // most probably unboxing on null
+                    if(value == null && setterParamType.isPrimitive()) {
+                        throw new IllegalArgumentException("Can't unbox null value of " + fromName + '.' + propertyName
+                                                                                 + " to " + toName + '.' + propertyName, e);
+                    } else {
+                        throw e;
+                    }
+                }
             } else {
-                log.info("Incompatible mapping from {}.{} as {} to {}.{} on {}",
-                        fromName, propertyName, getterReturn.getSimpleName(),
-                        toName, propertyName, setterParamType.getSimpleName());
+                log.info("Incompatible mapping from {} {}#{} to {}#{}({})",
+                        getterReturn.getSimpleName(), fromName, getter.getName(),
+                        toName, setter.getName(), setterParamType.getSimpleName());
             }
         } catch (InvocationTargetException e) {
             throw new IllegalArgumentException(e);
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
-    }
-
-
-    public static List<String> getMappableProps(Class<?> fromClass, Class<?> toClass) {
-        // unsafe on purpose
-        GettersAndSetters fromGetters = new GettersAndSetters(fromClass, true, false, true),
-                            toSetters = new GettersAndSetters(toClass, false, true, true);
-        return fromGetters.getMappableProps(toSetters);
     }
 }

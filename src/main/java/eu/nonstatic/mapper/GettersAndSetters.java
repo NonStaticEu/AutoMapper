@@ -1,15 +1,13 @@
-package eu.nonstatic.mmapper;
+package eu.nonstatic.mapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import static java.lang.Character.toLowerCase;
+import static java.lang.Math.min;
 import static java.lang.reflect.Modifier.isPublic;
 import static java.lang.reflect.Modifier.isStatic;
 import static java.util.Collections.sort;
@@ -36,13 +34,13 @@ class GettersAndSetters {
         this(clazz, true, true, true);
     }
 
-    public GettersAndSetters(Class<?> clazz, boolean getters, boolean setters, boolean usingSetters) {
+    public GettersAndSetters(Class<?> clazz, boolean extractGetters, boolean extractSetters, boolean usingSetters) {
         Method[] methods = clazz.getMethods();
         for (Method method : methods) {
             int modifiers = method.getModifiers();
             if (isPublic(modifiers) && !isStatic(modifiers)) {
                 boolean getterFound = false;
-                if (getters) {
+                if (extractGetters) {
                     String getterProp = isGetter(clazz, method);
                     if (getterFound = (getterProp != null)) {
                         log.info("{} getter: {} => {} {}()", clazz.getSimpleName(), getterProp, method.getReturnType().getSimpleName(), method.getName());
@@ -50,7 +48,7 @@ class GettersAndSetters {
                     }
                 }
 
-                if (!getterFound && setters) { // not a getter, may be a setter then
+                if (!getterFound && extractSetters) { // not a getter, may be a setter then
                     String setterProp = isSetter(clazz, method, usingSetters);
                     if (setterProp != null) {
                         log.info("{} setter: {} => {}({})", clazz.getSimpleName(), setterProp, method.getName(), method.getParameterTypes()[0]);
@@ -134,15 +132,45 @@ class GettersAndSetters {
     }
 
 
+    public void checkGettersContain(String... props) throws IllegalArgumentException {
+        checkContains(getterProps(), props);
+    }
+
+    public void checkSettersContain(String... props) throws IllegalArgumentException {
+        checkContains(setterProps(), props);
+    }
+
+    private void checkContains(Collection<String> gsProps, String... checkedProps) throws IllegalArgumentException {
+        if(checkedProps != null && checkedProps.length > 0) {
+            List<String> unknown = new ArrayList<>(checkedProps.length);
+            for (String prop : checkedProps) {
+                if (!gsProps.contains(prop)) {
+                    unknown.add(prop);
+                }
+            }
+            if(!unknown.isEmpty()) {
+                throw new IllegalArgumentException("Unknown props: " + unknown);
+            }
+        }
+    }
+
     public List<String> getMappableProps(GettersAndSetters gs) {
-        List<String> result = new ArrayList<>(Math.min(getters.size(), gs.setters.size()));
-        for (String propertyName : getters.keySet()) {
+        List<String> result = new ArrayList<>(min(getters.size(), gs.setters.size()));
+        for (String propertyName : getterProps()) {
             if(gs.setters.get(propertyName) != null) {
                 result.add(propertyName);
             }
         }
         sort(result);
         return result;
+    }
+
+
+    public static List<String> getMappableProps(Class<?> fromClass, Class<?> toClass) {
+        // unsafe on purpose
+        GettersAndSetters fromGetters = new GettersAndSetters(fromClass, true, false, true),
+                            toSetters = new GettersAndSetters(toClass, false, true, true);
+        return fromGetters.getMappableProps(toSetters);
     }
 
 
