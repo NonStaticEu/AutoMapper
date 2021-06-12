@@ -11,6 +11,7 @@ import static java.lang.Math.min;
 import static java.lang.reflect.Modifier.isPublic;
 import static java.lang.reflect.Modifier.isStatic;
 import static java.util.Collections.sort;
+import static java.util.Objects.requireNonNull;
 
 
 class GettersAndSetters {
@@ -25,6 +26,7 @@ class GettersAndSetters {
     private static final String PREFIX_SET = "set";
     private static final int PREFIX_SET_LENGTH = PREFIX_SET.length();
 
+    final String targetName;
     final HashMap<String, Method> getters = new HashMap<>();
     final HashMap<String, Method>  setters = new HashMap<>();
     BuilderContext builderContext;
@@ -35,6 +37,7 @@ class GettersAndSetters {
     }
 
     public GettersAndSetters(Class<?> clazz, boolean extractGetters, boolean extractSetters, boolean usingSetters) {
+        this.targetName = clazz.getSimpleName();
         Method[] methods = clazz.getMethods();
         for (Method method : methods) {
             int modifiers = method.getModifiers();
@@ -43,7 +46,7 @@ class GettersAndSetters {
                 if (extractGetters) {
                     String getterProp = isGetter(clazz, method);
                     if (getterFound = (getterProp != null)) {
-                        log.info("{} getter: {} => {} {}()", clazz.getSimpleName(), getterProp, method.getReturnType().getSimpleName(), method.getName());
+                        log.info("{} getter: {} => {} {}()", targetName, getterProp, method.getReturnType().getSimpleName(), method.getName());
                         this.getters.put(getterProp, method);
                     }
                 }
@@ -51,7 +54,7 @@ class GettersAndSetters {
                 if (!getterFound && extractSetters) { // not a getter, may be a setter then
                     String setterProp = isSetter(clazz, method, usingSetters);
                     if (setterProp != null) {
-                        log.info("{} setter: {} => {}({})", clazz.getSimpleName(), setterProp, method.getName(), method.getParameterTypes()[0]);
+                        log.info("{} setter: {} => {}({})", targetName, setterProp, method.getName(), method.getParameterTypes()[0]);
                         this.setters.put(setterProp, method);
                     }
                 }
@@ -59,6 +62,9 @@ class GettersAndSetters {
         }
     }
 
+    public String getTargetName() {
+        return targetName;
+    }
 
     public HashMap<String, Method> getters() {
         return getters;
@@ -85,11 +91,11 @@ class GettersAndSetters {
     }
 
     public Method getter(String prop) {
-        return getters.get(prop);
+        return getters.get(requireNonNull(prop));
     }
 
     public Method setter(String prop) {
-        return setters.get(prop);
+        return setters.get(requireNonNull(prop));
     }
 
 

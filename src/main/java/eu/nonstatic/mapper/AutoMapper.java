@@ -8,8 +8,10 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
-import static eu.nonstatic.mapper.AssignableHelper.isAssignable;
+import static eu.nonstatic.mapper.MappingUtils.mapProperty;
 import static eu.nonstatic.mapper.ReflectionUtils.*;
+import static eu.nonstatic.mapper.Utils.contains;
+import static java.util.Objects.requireNonNull;
 
 public class AutoMapper {
 
@@ -35,7 +37,7 @@ public class AutoMapper {
     }
 
     public GettersAndSetters register(Class<?> clazz, boolean usingSetters) {
-        return registry.computeIfAbsent(clazz, c -> toGettersAndSettersSafe(c, usingSetters));
+        return registry.computeIfAbsent(requireNonNull(clazz), c -> toGettersAndSettersSafe(c, usingSetters));
     }
 
 
@@ -80,8 +82,8 @@ public class AutoMapper {
 
     public <F, T> T mapToInstance(F fromInstance, Class<T> toClass, String... excludedProps) {
         try {
-            return map(fromInstance, toClass.newInstance(), excludedProps);
-        } catch (InstantiationException | IllegalAccessException e) { // are you POJO enough?
+            return map(fromInstance, toClass.getDeclaredConstructor().newInstance(), excludedProps);
+        } catch (NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) { // are you POJO enough?
             throw new RuntimeException(e);
         }
     }
@@ -120,10 +122,10 @@ public class AutoMapper {
     }
 
 
-    private <F, T> T mapInternal(F from, T to, boolean usingSetters, String[] excludedProps) {
-        if(from != null && to != null) {
+    private <F, T> T mapInternal(F fromInstance, T toInstance, boolean usingSetters, String[] excludedProps) {
+        if(fromInstance != null && toInstance != null) {
 
-            Class<?> fromClass = from.getClass(), toClass = to.getClass();
+            Class<?> fromClass = fromInstance.getClass(), toClass = toInstance.getClass();
             GettersAndSetters gsFrom = checkRegistered(fromClass, true, "from"),
                                 gsTo = checkRegistered(toClass, usingSetters, "to");
 
@@ -135,16 +137,16 @@ public class AutoMapper {
                     log.info("Skipping excluded prop {}", propertyName);
                 } else {
                     Method setter = gsTo.setters.get(propertyName);
-                    String fromName = fromClass.getSimpleName(), toName = toClass.getSimpleName();
                     if (setter != null) {
-                        mapProperty(propertyName, from, fromName, gEntry.getValue(), to, toName, setter, usingSetters);
+                        Method getter = gEntry.getValue();
+                        mapProperty(fromInstance, gsFrom.getTargetName(), getter, propertyName, toInstance, gsTo.getTargetName(), setter, propertyName, usingSetters);
                     } else {
-                        log.info("No match for getter {}.{} into {}", fromName, propertyName, toName);
+                        log.info("No match for getter {}.{} into {}", gsFrom.getTargetName(), propertyName, gsTo.getTargetName());
                     }
                 }
             }
         }
-        return to;
+        return toInstance;
     }
 
 
@@ -158,50 +160,5 @@ public class AutoMapper {
             }
         }
         return gs;
-    }
-
-
-    private static <T> boolean contains(T needle, T[] haystack) {
-        if(haystack != null) {
-            for (T candidate : haystack) {
-                if (needle.equals(candidate)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-
-    private static <F, T> void mapProperty(String propertyName, F from, String fromName, Method getter, T to, String toName, Method setter, boolean usingSetters) {
-        try {
-            Object value = getter.invoke(from);
-            // taking the most specialized; eg: Number getProp() where prop's value is an actual Integer.
-            Class<?> getterReturn = value != null ? value.getClass() : getter.getReturnType();
-            Class<?> setterParamType = setter.getParameterTypes()[0];
-            if (/* TODO useless? !usingSetters || */ isAssignable(getterReturn, setterParamType)) {
-                 // happy that primitives do auto boxing
-                log.info("Mapping from {}.{} to {}.{} with {}", fromName, propertyName, toName, propertyName, value);
-                try {
-                    //TODO coertion
-                    setter.invoke(to, value); // also happy auto unboxing takes place when needed
-                } catch (IllegalArgumentException e) { // most probably unboxing on null
-                    if(value == null && setterParamType.isPrimitive()) {
-                        throw new IllegalArgumentException("Can't unbox null value of " + fromName + '.' + propertyName
-                                                                                 + " to " + toName + '.' + propertyName, e);
-                    } else {
-                        throw e;
-                    }
-                }
-            } else {
-                log.info("Incompatible mapping from {} {}#{} to {}#{}({})",
-                        getterReturn.getSimpleName(), fromName, getter.getName(),
-                        toName, setter.getName(), setterParamType.getSimpleName());
-            }
-        } catch (InvocationTargetException e) {
-            throw new IllegalArgumentException(e);
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
     }
 }

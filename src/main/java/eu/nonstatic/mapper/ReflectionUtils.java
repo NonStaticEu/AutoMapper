@@ -8,13 +8,15 @@ import java.lang.reflect.Method;
 import static java.lang.reflect.Modifier.isAbstract;
 import static java.lang.reflect.Modifier.isStatic;
 
-public class ReflectionUtils {
+public final class ReflectionUtils {
 
     private static final String DEFAULT_BUILDER_METHOD_NAME = "builder";
     private static final String DEFAULT_BUILDER_S_BUILD_METHOD_NAME = "build";
     private static final String AVRO_SPECIFIC_RECORD_BASE_FQCN = "org.apache.avro.specific.SpecificRecordBase"; // FQCN to avoid dependency
 
     private static final Logger log = LoggerFactory.getLogger(ReflectionUtils.class);
+
+    private ReflectionUtils() {}
 
     /**
      * May be abstract. eg: lombok's @SuperBuilder would return an abstract type
