@@ -46,7 +46,7 @@ class GettersAndSetters {
                 if (extractGetters) {
                     String getterProp = isGetter(clazz, method);
                     if (getterFound = (getterProp != null)) {
-                        log.info("{} getter: {} => {} {}()", targetName, getterProp, method.getReturnType().getSimpleName(), method.getName());
+                        log.debug("{} getter: {} => {} {}()", targetName, getterProp, method.getReturnType().getSimpleName(), method.getName());
                         this.getters.put(getterProp, method);
                     }
                 }
@@ -54,7 +54,7 @@ class GettersAndSetters {
                 if (!getterFound && extractSetters) { // not a getter, may be a setter then
                     String setterProp = isSetter(clazz, method, usingSetters);
                     if (setterProp != null) {
-                        log.info("{} setter: {} => {}({})", targetName, setterProp, method.getName(), method.getParameterTypes()[0]);
+                        log.debug("{} setter: {} => {}({})", targetName, setterProp, method.getName(), method.getParameterTypes()[0]);
                         this.setters.put(setterProp, method);
                     }
                 }

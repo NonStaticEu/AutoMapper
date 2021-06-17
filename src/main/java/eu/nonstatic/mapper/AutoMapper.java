@@ -134,14 +134,14 @@ public class AutoMapper {
             for (Map.Entry<String, Method> gEntry : gsFrom.getters.entrySet()) {
                 String propertyName = gEntry.getKey();
                 if(contains(propertyName, excludedProps)) {
-                    log.info("Skipping excluded prop {}", propertyName);
+                    log.debug("Skipping excluded prop {}", propertyName);
                 } else {
                     Method setter = gsTo.setters.get(propertyName);
                     if (setter != null) {
                         Method getter = gEntry.getValue();
                         mapProperty(fromInstance, gsFrom.getTargetName(), getter, propertyName, toInstance, gsTo.getTargetName(), setter, propertyName, usingSetters);
                     } else {
-                        log.info("No match for getter {}.{} into {}", gsFrom.getTargetName(), propertyName, gsTo.getTargetName());
+                        log.debug("No match for getter {}.{} into {}", gsFrom.getTargetName(), propertyName, gsTo.getTargetName());
                     }
                 }
             }

@@ -78,7 +78,7 @@ final class MappingUtils {
             Class<?> setterParamType = setter.getParameterTypes()[0];
             if (/* TODO useless? !usingSetters || */ isAssignable(getterReturn, setterParamType)) {
                 // happy that primitives do auto boxing
-                log.info("Mapping from {}.{} to {}.{} with {}", fromClassName, getterPropName, toClassName, setterPropName, value);
+                log.debug("Mapping from {}.{} to {}.{} with {}", fromClassName, getterPropName, toClassName, setterPropName, value);
                 try {
                     //TODO coertion
                     setter.invoke(toInstance, value); // also happy auto unboxing takes place when needed
@@ -91,7 +91,7 @@ final class MappingUtils {
                     }
                 }
             } else {
-                log.info("Incompatible mapping from {} {}#{} to {}#{}({})",
+                log.debug("Incompatible mapping from {} {}#{} to {}#{}({})",
                         getterReturn.getSimpleName(), fromClassName, getter.getName(),
                         toClassName, setter.getName(), setterParamType.getSimpleName());
             }
