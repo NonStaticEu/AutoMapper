@@ -5,13 +5,19 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
+import static eu.nonstatic.mapper.GettersAndSetters.USING_SETTERS_DEFAULT;
 import static eu.nonstatic.mapper.MappingUtils.mapProperty;
-import static eu.nonstatic.mapper.ReflectionUtils.*;
-import static eu.nonstatic.mapper.Utils.contains;
+import static eu.nonstatic.mapper.ReflectionUtils.findBuilderMethod;
+import static eu.nonstatic.mapper.ReflectionUtils.isBuilderUsingSetters;
+import static java.util.Arrays.asList;
+import static java.util.Collections.emptySet;
 import static java.util.Objects.requireNonNull;
+import static java.util.function.Function.identity;
 
 public class AutoMapper {
 
@@ -27,17 +33,8 @@ public class AutoMapper {
 
     public AutoMapper(Class<?>... clazzz) {
         for (Class<?> clazz : clazzz) {
-            register(clazz, true);
+            registerClass(clazz, USING_SETTERS_DEFAULT);
         }
-    }
-
-
-    public GettersAndSetters register(Class<?> clazz) {
-        return register(clazz, true);
-    }
-
-    public GettersAndSetters register(Class<?> clazz, boolean usingSetters) {
-        return registry.computeIfAbsent(requireNonNull(clazz), c -> toGettersAndSettersSafe(c, usingSetters));
     }
 
 
@@ -51,68 +48,144 @@ public class AutoMapper {
     }
 
 
-    private GettersAndSetters toGettersAndSettersSafe(Class<?> clazz, boolean usingSetters) {
-        return toGettersAndSettersSafe(clazz, true, true, usingSetters);
+    @Deprecated
+    private GettersAndSetters registerClass(Class<?> clazz) {
+        return registerClass(clazz, USING_SETTERS_DEFAULT);
+    }
+
+    /**
+     * Calling twice willre-register (in case you changed your mind about setters or the class got altered!)
+     * @param clazz
+     * @param usingSetters
+     * @return
+     */
+    private GettersAndSetters registerClass(Class<?> clazz, boolean usingSetters) {
+        GettersAndSetters gs = GettersAndSetters.of(clazz, usingSetters);
+        registry.put(clazz, gs);
+        return gs;
+    }
+
+    public GettersAndSetters unregisterClass(Class<?> clazz) {
+        return registry.remove(requireNonNull(clazz));
     }
 
 
-    private GettersAndSetters toGettersAndSettersSafe(Class<?> clazz, boolean getters, boolean setters, boolean usingSetters) {
-        if(usingSetters ? isBuildable(clazz) : isMappable(clazz)) {
-            return new GettersAndSetters(clazz, getters, setters, usingSetters);
+    public GettersAndSetters getRegistration(Class<?> clazz) {
+        return getRegistration(clazz, USING_SETTERS_DEFAULT);
+    }
+
+    private GettersAndSetters getRegistration(Class<?> clazz, boolean usingSetters) {
+        return registerOnDemand(clazz, usingSetters, this.autoRegister);
+    }
+
+    public GettersAndSetters getRegistrationForced(Class<?> clazz) {
+        return getRegistrationForced(clazz, USING_SETTERS_DEFAULT);
+    }
+
+    private GettersAndSetters getRegistrationForced(Class<?> clazz, boolean usingSetters) {
+        return registerOnDemand(clazz, usingSetters, true);
+    }
+
+    private GettersAndSetters registerOnDemand(Class<?> clazz, boolean usingSetters, boolean autoRegister) {
+        if(autoRegister) {
+            return registry.computeIfAbsent(clazz, c -> registerClass(clazz, usingSetters));
         } else {
-            throw new IllegalArgumentException("Won't be able to map type " + clazz.getName());
+            GettersAndSetters gs = registry.get(clazz);
+            if(gs != null) {
+                return gs;
+            } else {
+                throw new IllegalArgumentException("Don't know how to map " + clazz.getName());
+            }
         }
     }
 
 
     public <F, T> T map(F fromInstance, T toInstance) {
-        return map(fromInstance, toInstance, (String[])null);
+        return map(fromInstance, toInstance, emptySet(), identity());
     }
 
 
     public <F, T> T map(F fromInstance, T toInstance, String... excludedProps) {
-        return mapInternal(fromInstance, toInstance, true, excludedProps);
+        return map(fromInstance, toInstance, asList(excludedProps), identity());
     }
+
+    public <F, T> T map(F fromInstance, T toInstance, Collection<String> excludedProps) {
+        return map(fromInstance, toInstance, excludedProps, identity());
+    }
+
+    protected <F, T, R> R map(F fromInstance, T toInstance, Collection<String> excludedProps, Function<T, R> postProcessing) {
+        GettersAndSetters gsFrom = getRegistration(fromInstance.getClass()), gsTo = getRegistration(toInstance.getClass());
+        return mapInternal(fromInstance, gsFrom, toInstance, gsTo, excludedProps, postProcessing);
+    }
+
 
 
     public <F, T> T mapToInstance(F fromInstance, Class<T> toClass) {
-        return mapToInstance(fromInstance, toClass, (String[])null);
+        return mapToInstance(fromInstance, toClass, emptySet(), identity());
     }
 
-
     public <F, T> T mapToInstance(F fromInstance, Class<T> toClass, String... excludedProps) {
+        return mapToInstance(fromInstance, toClass, asList(excludedProps), identity());
+    }
+
+    public <F, T> T mapToInstance(F fromInstance, Class<T> toClass, Collection<String> excludedProps) {
+        return mapToInstance(fromInstance, toClass, excludedProps, identity());
+    }
+
+    protected <F, T, R> R mapToInstance(F fromInstance, Class<T> toClass, Collection<String> excludedProps, Function<T, R> postProcessing) {
         try {
-            return map(fromInstance, toClass.getDeclaredConstructor().newInstance(), excludedProps);
+            return map(fromInstance, toClass.getDeclaredConstructor().newInstance(), excludedProps, postProcessing);
         } catch (NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) { // are you POJO enough?
             throw new RuntimeException(e);
         }
     }
 
 
+
+
     public <B> B mapToBuilder(Object fromInstance, Class<?> toClass) {
-        return mapToBuilder(fromInstance, toClass, (String[])null);
+        return mapToBuilder(fromInstance, toClass, emptySet());
+    }
+
+    public <B> B mapToBuilder(Object fromInstance, Class<?> toClass, String... excludedProps) {
+        return mapToBuilder(fromInstance, toClass, asList(excludedProps));
+    }
+
+    @SuppressWarnings("unchecked")
+    public <B> B mapToBuilder(Object fromInstance, Class<?> toClass, Collection<String> excludedProps) {
+        return mapToBuilder(fromInstance, toClass, excludedProps, identity());
+    }
+
+    @SuppressWarnings("unchecked")
+    protected <B> B mapToBuilder(Object fromInstance, Class<?> toClass, Collection<String> excludedProps, Function<B, B> postProcessing) {
+        GettersAndSetters gsFrom = getRegistration(fromInstance.getClass());
+
+        BuilderWrapper<B> builderWrapper = getContextualizedBuilder(toClass);
+        GettersAndSetters gsTo = builderWrapper.gettersAndSetters;
+
+        return mapInternal(fromInstance, gsFrom, builderWrapper.builder, gsTo, excludedProps, postProcessing); // unsafe!
     }
 
 
-    @SuppressWarnings("unchecked")
-    public <B> B mapToBuilder(Object fromInstance, Class<?> to, String... excludedProps) {
+    <B> BuilderWrapper<B> getContextualizedBuilder(Class<?> toClass) {
         try {
-            Object toInstance;
-
-            GettersAndSetters gsTo = register(to); // No matter how autoRegister is set
+            B builderInstance;
+            GettersAndSetters gsTo = getRegistrationForced(toClass); // No matter how autoRegister is set
             GettersAndSetters.BuilderContext builderContext = gsTo.builderContext;
-            if(builderContext == null) {
-                Method builderMethod = findBuilderMethod(to);
-                toInstance = builderMethod.invoke(null);// NOT builderMethod.getReturnType(), its result may be abstract whereas calling will give a concrete instance, which is what we're actually mapping to.
-                boolean usingSetters = isBuilderUsingSetters(to);
 
-                register(toInstance.getClass(), usingSetters); // No matter how autoRegister is set
-                gsTo.builder(builderContext = new GettersAndSetters.BuilderContext(builderMethod, usingSetters));
+            if(builderContext == null) {
+                Method builderMethod = findBuilderMethod(toClass);
+                builderInstance = (B)builderMethod.invoke(null);// NOT builderMethod.getReturnType(), it may be abstract, whereas calling the builder method will obviously give a concrete instance, which is what we're actually mapping to.
+                // We needed to build to know what to register
+                Class<?> builderClass = builderInstance.getClass();
+                boolean usingSetters = isBuilderUsingSetters(toClass);
+                GettersAndSetters builderClassGS = getRegistrationForced(builderClass, usingSetters);// No matter how autoRegister is set
+                gsTo.setBuilderContext(builderContext = new GettersAndSetters.BuilderContext(builderClass, builderMethod, builderClassGS));
             } else {
-                toInstance = builderContext.method.invoke(null);
+                builderInstance = (B)builderContext.method.invoke(null);
             }
 
-            return (B) mapInternal(fromInstance, toInstance, builderContext.usingSetters, excludedProps); // unsafe!
+            return new BuilderWrapper<>(builderInstance, builderContext);
         }
         catch(NoSuchMethodException e) {
             throw new IllegalArgumentException(e);
@@ -121,44 +194,36 @@ public class AutoMapper {
         }
     }
 
+    class BuilderWrapper<B> {
+        B builder; // builder instance
+        GettersAndSetters gettersAndSetters;
 
-    private <F, T> T mapInternal(F fromInstance, T toInstance, boolean usingSetters, String[] excludedProps) {
-        if(fromInstance != null && toInstance != null) {
+        BuilderWrapper(B builder, GettersAndSetters.BuilderContext context) {
+            this.builder = builder;
+            this.gettersAndSetters = context.gettersAndSetters;
+        }
+    }
 
-            Class<?> fromClass = fromInstance.getClass(), toClass = toInstance.getClass();
-            GettersAndSetters gsFrom = checkRegistered(fromClass, true, "from"),
-                                gsTo = checkRegistered(toClass, usingSetters, "to");
-
+    <F, T, R> R mapInternal(F fromInstance, GettersAndSetters gsFrom, T toInstanceOrBuilder, GettersAndSetters gsTo, Collection<String> excludedProps, Function<T, R> postProcessing) {
+        if(fromInstance != null && toInstanceOrBuilder != null) {
             gsFrom.checkGettersContain(excludedProps);
 
             for (Map.Entry<String, Method> gEntry : gsFrom.getters.entrySet()) {
                 String propertyName = gEntry.getKey();
-                if(contains(propertyName, excludedProps)) {
+                if(excludedProps.contains(propertyName)) {
                     log.debug("Skipping excluded prop {}", propertyName);
                 } else {
                     Method setter = gsTo.setters.get(propertyName);
                     if (setter != null) {
                         Method getter = gEntry.getValue();
-                        mapProperty(fromInstance, gsFrom.getTargetName(), getter, propertyName, toInstance, gsTo.getTargetName(), setter, propertyName, usingSetters);
+                        mapProperty(fromInstance, gsFrom.getTargetClassName(), getter, propertyName, toInstanceOrBuilder, gsTo.getTargetClassName(), setter, propertyName);
                     } else {
-                        log.debug("No match for getter {}.{} into {}", gsFrom.getTargetName(), propertyName, gsTo.getTargetName());
+                        log.debug("No match for getter {}.{} into {}", gsFrom.getTargetClassName(), propertyName, gsTo.getTargetClassName());
                     }
                 }
             }
         }
-        return toInstance;
-    }
 
-
-    private GettersAndSetters checkRegistered(Class<?> clazz, boolean usingSetters, String direction) {
-        GettersAndSetters gs = registry.get(clazz);
-        if(gs == null) {
-            if(autoRegister) {
-                gs = register(clazz, usingSetters);
-            } else {
-                throw new IllegalArgumentException("Don't know how to map " + direction + ' ' + clazz.getName());
-            }
-        }
-        return gs;
+        return postProcessing.apply(toInstanceOrBuilder);
     }
 }

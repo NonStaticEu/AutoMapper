@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Method;
 import java.util.*;
 
+import static eu.nonstatic.mapper.ReflectionUtils.isBuildable;
+import static eu.nonstatic.mapper.ReflectionUtils.isMappable;
 import static java.lang.Character.toLowerCase;
 import static java.lang.Math.min;
 import static java.lang.reflect.Modifier.isPublic;
@@ -13,7 +15,9 @@ import static java.lang.reflect.Modifier.isStatic;
 import static java.util.Collections.sort;
 import static java.util.Objects.requireNonNull;
 
-
+/**
+ * This class expands any class into its getters and setters
+ */
 class GettersAndSetters {
 
     private static final Logger log = LoggerFactory.getLogger(GettersAndSetters.class);
@@ -25,20 +29,23 @@ class GettersAndSetters {
     private static final int PREFIX_GET_LENGTH = PREFIX_GET.length();
     private static final String PREFIX_SET = "set";
     private static final int PREFIX_SET_LENGTH = PREFIX_SET.length();
+    static final boolean USING_SETTERS_DEFAULT = true;
 
-    final String targetName;
+
+    // not needed for now final Class<?> targetClass;
+    final String targetClassName;
     final HashMap<String, Method> getters = new HashMap<>();
     final HashMap<String, Method>  setters = new HashMap<>();
+    final boolean usingSetPrefix;
     BuilderContext builderContext;
 
 
-    public GettersAndSetters(Class<?> clazz) {
-        this(clazz, true, true, true);
-    }
+    private GettersAndSetters(Class<?> clazz, boolean extractGetters, boolean extractSetters, boolean usingSetPrefix) {
+        //this.targetClass = clazz;
+        this.targetClassName = clazz.getSimpleName();
+        this.usingSetPrefix = usingSetPrefix;
 
-    public GettersAndSetters(Class<?> clazz, boolean extractGetters, boolean extractSetters, boolean usingSetters) {
-        this.targetName = clazz.getSimpleName();
-        Method[] methods = clazz.getMethods();
+        Method[] methods = clazz.getMethods(); // does not contain shadowed methods
         for (Method method : methods) {
             int modifiers = method.getModifiers();
             if (isPublic(modifiers) && !isStatic(modifiers)) {
@@ -46,15 +53,15 @@ class GettersAndSetters {
                 if (extractGetters) {
                     String getterProp = isGetter(clazz, method);
                     if (getterFound = (getterProp != null)) {
-                        log.debug("{} getter: {} => {} {}()", targetName, getterProp, method.getReturnType().getSimpleName(), method.getName());
+                        log.debug("{} getter: {} => {} {}()", targetClassName, getterProp, method.getReturnType().getSimpleName(), method.getName());
                         this.getters.put(getterProp, method);
                     }
                 }
 
                 if (!getterFound && extractSetters) { // not a getter, may be a setter then
-                    String setterProp = isSetter(clazz, method, usingSetters);
+                    String setterProp = isSetter(clazz, method);
                     if (setterProp != null) {
-                        log.debug("{} setter: {} => {}({})", targetName, setterProp, method.getName(), method.getParameterTypes()[0]);
+                        log.debug("{} setter: {} => {}({})", targetClassName, setterProp, method.getName(), method.getParameterTypes()[0]);
                         this.setters.put(setterProp, method);
                     }
                 }
@@ -62,8 +69,26 @@ class GettersAndSetters {
         }
     }
 
-    public String getTargetName() {
-        return targetName;
+
+    public static GettersAndSetters of(Class<?> clazz) {
+        return of(clazz, USING_SETTERS_DEFAULT);
+    }
+
+    public static GettersAndSetters of(Class<?> clazz, boolean usingSetters) {
+        return of(clazz, true, true, usingSetters);
+    }
+
+    public static GettersAndSetters of(Class<?> clazz, boolean getters, boolean setters, boolean usingSetters) {
+        if(usingSetters ? isBuildable(clazz) : isMappable(clazz)) {
+            return new GettersAndSetters(clazz, getters, setters, usingSetters);
+        } else {
+            throw new IllegalArgumentException("Won't be able to map type " + clazz.getName());
+        }
+    }
+
+
+    public String getTargetClassName() {
+        return targetClassName;
     }
 
     public HashMap<String, Method> getters() {
@@ -74,11 +99,15 @@ class GettersAndSetters {
         return setters;
     }
 
+    public boolean isUsingSetPrefix() {
+        return usingSetPrefix;
+    }
+
     public BuilderContext getBuilder() {
         return builderContext;
     }
 
-    public void builder(BuilderContext builderContext) {
+    public void setBuilderContext(BuilderContext builderContext) {
         this.builderContext = builderContext;
     }
 
@@ -100,7 +129,7 @@ class GettersAndSetters {
 
 
 
-    private static String isGetter(Class<?> clazz, Method method){
+    private String isGetter(Class<?> clazz, Method method){
         if(method.getParameterTypes().length == 0) {
             String name = method.getName();
             Class<?> returnType = method.getReturnType();
@@ -114,7 +143,7 @@ class GettersAndSetters {
     }
 
 
-    private static String isSetter(Class<?> clazz, Method method, boolean usingSetPrefix) {
+    private String isSetter(Class<?> clazz, Method method) {
         String name = method.getName();
         if(!usingSetPrefix) {
             if(method.getReturnType().isAssignableFrom(clazz)) { // is it really a builder method? Still, taking Lombok's @SuperBuilder into account
@@ -138,17 +167,18 @@ class GettersAndSetters {
     }
 
 
-    public void checkGettersContain(String... props) throws IllegalArgumentException {
+    public void checkGettersContain(Collection<String> props) throws IllegalArgumentException {
         checkContains(getterProps(), props);
     }
 
-    public void checkSettersContain(String... props) throws IllegalArgumentException {
+    public void checkSettersContain(Collection<String> props) throws IllegalArgumentException {
         checkContains(setterProps(), props);
     }
 
-    private void checkContains(Collection<String> gsProps, String... checkedProps) throws IllegalArgumentException {
-        if(checkedProps != null && checkedProps.length > 0) {
-            List<String> unknown = new ArrayList<>(checkedProps.length);
+    private void checkContains(Collection<String> gsProps, Collection<String> checkedProps) throws IllegalArgumentException {
+        int checkedPropsSize;
+        if(checkedProps != null && (checkedPropsSize = checkedProps.size()) > 0) {
+            List<String> unknown = new ArrayList<>(checkedPropsSize);
             for (String prop : checkedProps) {
                 if (!gsProps.contains(prop)) {
                     unknown.add(prop);
@@ -174,19 +204,24 @@ class GettersAndSetters {
 
     public static List<String> getMappableProps(Class<?> fromClass, Class<?> toClass) {
         // unsafe on purpose
-        GettersAndSetters fromGetters = new GettersAndSetters(fromClass, true, false, true),
-                            toSetters = new GettersAndSetters(toClass, false, true, true);
+        GettersAndSetters fromGetters = new GettersAndSetters(fromClass, true, false, USING_SETTERS_DEFAULT),
+                            toSetters = new GettersAndSetters(toClass, false, true, USING_SETTERS_DEFAULT);
         return fromGetters.getMappableProps(toSetters);
     }
 
 
-    public final static class BuilderContext {
+    /**
+     * This class explains how a builder may be called and used on a given class
+     */
+    public static class BuilderContext {
+        Class<?> builderClass;
         Method method;
-        boolean usingSetters;
+        GettersAndSetters gettersAndSetters;
 
-        public BuilderContext(Method method, boolean usingSetters) {
+        public BuilderContext(Class<?> builderClass, Method method, GettersAndSetters gettersAndSetters) {
+            this.builderClass = builderClass;
             this.method = method;
-            this.usingSetters = usingSetters;
+            this.gettersAndSetters = gettersAndSetters;
         }
     }
 }

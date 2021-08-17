@@ -69,8 +69,7 @@ final class MappingUtils {
 
 
     static <F, T> void mapProperty(F fromInstance, String fromClassName, Method getter, String getterPropName,
-                                   T toInstance, String toClassName, Method setter, String setterPropName,
-                                   boolean usingSetters) {
+                                   T toInstance, String toClassName, Method setter, String setterPropName) {
         try {
             Object value = getter.invoke(fromInstance);
             // taking the most specialized; eg: Number getProp() where prop's value is an actual Integer.

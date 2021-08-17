@@ -1,4 +1,4 @@
-package eu.nonstatic.mapper;
+package eu.nonstatic.mapper.auto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

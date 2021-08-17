@@ -31,6 +31,10 @@ public final class ReflectionUtils {
                 || clazz.isArray());
     }
 
+    /**
+     * @param clazz
+     * @return true is the class given as parameter may be used as a target for mapping
+     */
     public static boolean isMappable(Class<?> clazz) {
         return !isAbstract(clazz.getModifiers()) && isBuildable(clazz) && isNoArgsConstructor(clazz);
     }

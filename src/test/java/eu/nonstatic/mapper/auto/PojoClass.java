@@ -1,4 +1,4 @@
-package eu.nonstatic.mapper;
+package eu.nonstatic.mapper.auto;
 
 import java.util.List;
 import java.util.Map;
@@ -14,12 +14,13 @@ public class PojoClass {
     private Object AAA;
     private List<String> myList;
     private Object unused;
+    String myShadowedString;
 
 
     public PojoClass() {
     }
 
-    public PojoClass(boolean myBoolean, Boolean myBooleanWrapper, Number myNumber, long myLong, Short myShort, String myString, Object AAA, List<String> myList, Object unused) {
+    public PojoClass(boolean myBoolean, Boolean myBooleanWrapper, Number myNumber, long myLong, Short myShort, String myString, Object AAA, List<String> myList, Object unused, String myShadowedString) {
         this.myBoolean = myBoolean;
         this.myBooleanWrapper = myBooleanWrapper;
         this.myNumber = myNumber;
@@ -29,6 +30,7 @@ public class PojoClass {
         this.AAA = AAA;
         this.myList = myList;
         this.unused = unused;
+        this.myShadowedString = myShadowedString;
     }
 
     public boolean isMyBoolean() {
@@ -103,17 +105,25 @@ public class PojoClass {
         this.unused = unused;
     }
 
+    public String getMyShadowedString() {
+        return myShadowedString;
+    }
+
+    public void setMyShadowedString(String myShadowedString) {
+        this.myShadowedString = myShadowedString;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         PojoClass pojoClass = (PojoClass) o;
-        return myBoolean == pojoClass.myBoolean && myLong == pojoClass.myLong && Objects.equals(myBooleanWrapper, pojoClass.myBooleanWrapper) && Objects.equals(myNumber, pojoClass.myNumber) && Objects.equals(myShort, pojoClass.myShort) && Objects.equals(myString, pojoClass.myString) && Objects.equals(AAA, pojoClass.AAA) && Objects.equals(myList, pojoClass.myList) && Objects.equals(unused, pojoClass.unused);
+        return myBoolean == pojoClass.myBoolean && myLong == pojoClass.myLong && Objects.equals(myBooleanWrapper, pojoClass.myBooleanWrapper) && Objects.equals(myNumber, pojoClass.myNumber) && Objects.equals(myShort, pojoClass.myShort) && Objects.equals(myString, pojoClass.myString) && Objects.equals(AAA, pojoClass.AAA) && Objects.equals(myList, pojoClass.myList) && Objects.equals(unused, pojoClass.unused) && Objects.equals(myShadowedString, pojoClass.myShadowedString);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(myBoolean, myBooleanWrapper, myNumber, myLong, myShort, myString, AAA, myList, unused);
+        return Objects.hash(myBoolean, myBooleanWrapper, myNumber, myLong, myShort, myString, AAA, myList, unused, myShadowedString);
     }
 
     public static final class PojoSubClass {

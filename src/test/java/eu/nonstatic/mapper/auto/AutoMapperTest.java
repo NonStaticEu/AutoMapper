@@ -1,5 +1,6 @@
-package eu.nonstatic.mapper;
+package eu.nonstatic.mapper.auto;
 
+import eu.nonstatic.mapper.AutoMapper;
 import org.junit.jupiter.api.Test;
 
 import java.net.InetAddress;
@@ -24,19 +25,19 @@ public class AutoMapperTest {
         POJO_FOOBAR.setMyString("FooBar");
 
         try {
-            POJO_CANONICAL = new PojoClass(true, false, 456, 123L, (short)77, "Hello World", new CompletableFuture<>(), Arrays.asList("foo", "bar"), InetAddress.getLocalHost());
+            POJO_CANONICAL = new PojoClass(true, false, 456, 123L, (short)77, "Hello World", new CompletableFuture<>(), Arrays.asList("foo", "bar"), InetAddress.getLocalHost(), "shadow");
         } catch (UnknownHostException e) {
             throw new RuntimeException(e);
         }
     }
 
     @Test
-    public void testFromEnumKO() {
+    public void should_not_map_from_enum() {
         assertThrows(IllegalArgumentException.class, () -> mapper.map(SomeEnum.FOO, new Object()));
     }
 
     @Test
-    public void testToPrivateCtorKO() {
+    public void should_not_map_with_private_constructor() {
         try {
             mapper.mapToInstance(POJO_CANONICAL, PojoPrivate.class);
         } catch(RuntimeException e) {
@@ -45,43 +46,43 @@ public class AutoMapperTest {
     }
 
     @Test
-    public void testToPrimitiveKO() {
+    public void should_not_map_to_primitive() {
         try {
             mapper.mapToInstance(POJO_FOOBAR, int.class);
         } catch(RuntimeException e) {
-            assertTrue(e.getCause() instanceof InstantiationException);
+            assertTrue(e.getCause() instanceof NoSuchMethodException);
         }
     }
 
     @Test
-    public void testToAnnotationKO() {
+    public void testTshould_not_map_to_annotation() {
         try {
             mapper.mapToInstance(POJO_FOOBAR, Override.class);
         } catch(RuntimeException e) {
-            assertTrue(e.getCause() instanceof InstantiationException);
+            assertTrue(e.getCause() instanceof NoSuchMethodException);
         }
     }
 
     @Test
-    public void testToEnumKO() {
+    public void should_not_map_to_enum() {
         try {
             mapper.mapToInstance(POJO_FOOBAR, SomeEnum.class);
         } catch(RuntimeException e) {
-            assertTrue(e.getCause() instanceof InstantiationException);
+            assertTrue(e.getCause() instanceof NoSuchMethodException);
         }
     }
 
     @Test
-    public void testToInterfaceKO() {
+    public void should_not_map_to_interface() {
         try {
             mapper.mapToInstance(POJO_FOOBAR, SomeInterface.class);
         } catch(RuntimeException e) {
-            assertTrue(e.getCause() instanceof InstantiationException);
+            assertTrue(e.getCause() instanceof NoSuchMethodException);
         }
     }
 
     @Test
-    public void testToAbstractKO() {
+    public void should_not_map_to_abstract_class() {
         try {
             mapper.mapToInstance(POJO_FOOBAR, SomeAbstractClass.class);
         } catch(RuntimeException e) {
@@ -90,21 +91,22 @@ public class AutoMapperTest {
     }
 
     @Test
-    public void testToArrayKO() {
+    public void should_not_map_to_array() {
         try {
             mapper.mapToInstance(POJO_FOOBAR, Object[].class);
         } catch(RuntimeException e) {
-            assertTrue(e.getCause() instanceof InstantiationException);
+            assertTrue(e.getCause() instanceof NoSuchMethodException);
         }
     }
 
     @Test
-    public void testToRandomObjectOK() {
-        mapper.mapToInstance(POJO_FOOBAR, Object.class); // just to check useless things do work
+    public void should_map_to_object() {
+        Object result = mapper.mapToInstance(POJO_FOOBAR, Object.class);// just to check useless things do work
+        assertTrue(Object.class == result.getClass());
     }
 
     @Test
-    public PojoClass testCopy() {
+    public PojoClass should_map_to_same_class() {
         PojoClass pojo2 = mapper.mapToInstance(POJO_FOOBAR, PojoClass.class);
         assertNotSame(POJO_FOOBAR, pojo2);
         assertEquals(POJO_FOOBAR, pojo2);
@@ -112,7 +114,7 @@ public class AutoMapperTest {
     }
 
     @Test
-    public void testCopyToItself() {
+    public void should_map_to_itself() {
         PojoClass pojoFooBarCopy = mapper.mapToInstance(POJO_FOOBAR, PojoClass.class);
         PojoClass pojoFooBarItself = mapper.map(POJO_FOOBAR, POJO_FOOBAR); //overwrite itself
         assertSame(POJO_FOOBAR, pojoFooBarItself);
@@ -123,7 +125,7 @@ public class AutoMapperTest {
 
 
     @Test
-    public void testPojoToPojo() {
+    public void should_map_pojos() {
         PojoClass pojo1 = POJO_CANONICAL;
         PojoClass pojo2 = new PojoClass();
         PojoClass pojo3 = mapper.map(pojo1, pojo2);
@@ -139,7 +141,17 @@ public class AutoMapperTest {
     }
 
     @Test
-    public void testPojoToLombokBuilder() {
+    public void should_map_shadowed_prop() {
+        PojoShadow pojoShadow = mapper.mapToInstance(POJO_CANONICAL, PojoShadow.class);
+
+        assertEquals("shadow", pojoShadow.getMyShadowedString());
+        assertEquals(123L, pojoShadow.getMyLong());
+
+        assertNull(((PojoClass)pojoShadow).myShadowedString);
+    }
+
+    @Test
+    public void should_map_to_lombok_builder() {
         PojoClass pojo = POJO_CANONICAL;
 
         LombokSimpleClass.LombokSimpleClassBuilder builder = mapper.mapToBuilder(pojo, LombokSimpleClass.class);
@@ -157,7 +169,7 @@ public class AutoMapperTest {
     }
 
     @Test
-    public void testAssignable() {
+    public void should_map_assignable_props() {
         PojoClass pojo = new PojoClass();
         pojo.setMyNumber(987L); // can't be assigned to an Integer
         List<String> myList = singletonList("FooBar");
@@ -188,7 +200,7 @@ public class AutoMapperTest {
     }
 
     @Test
-    public void testPojoToLombokSuperBuilder() {
+    public void should_map_to_super_builder() {
         PojoClass pojo = POJO_CANONICAL;
         mapper.<LombokBaseClass.LombokBaseClassBuilder>mapToBuilder(pojo, LombokBaseClass.class);
     }
